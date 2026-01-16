@@ -6,12 +6,14 @@
 #include <memory>
 #include <unordered_set>
 #include <algorithm>
+#include <cstring>
 #define CLAY_IMPLEMENTATION// Sidebar content can go here
 #include "../external/clay.h"
 #include "../external/renderer.h"
 
 #define NOB_IMPLEMENTATION
 #include "../external/nob.h"
+#include <cstring>
 
 
 
@@ -19,7 +21,9 @@
 static std::string g_cur_path;
 static bool g_isClickedLoadButton = false;
 std::vector<std::string> g_file_names;
+std::vector<std::unique_ptr<char[]>> g_file_name_buffers;
 std::vector<Clay_String> g_file_list_cache;
+int i = 0;
 
 static Clay_TextElementConfig textConfig = {
     .textColor = {255,255,255,255},
@@ -63,26 +67,37 @@ std::string relative(const std::string& base, const std::string& path) {
 
 bool walkDir(Nob_Walk_Entry entry){
     if(relative(g_cur_path,std::string(entry.path)).rfind("/.git",0) == 0){
-        return true; // Stop walking
+        return true; // Continue walking
     }
     if(entry.type == NOB_FILE_DIRECTORY){
         if(g_cur_path == std::string(entry.path)) {
             return true; // Skip root
         }
-        g_file_names.push_back(relative(g_cur_path,std::string(entry.path)));
+        std::string rel = relative(g_cur_path,std::string(entry.path));
+        g_file_names.push_back(rel);
+        // Allocate a buffer to hold the string data
+        auto buf = std::make_unique<char[]>(rel.size() + 1);
+        memcpy(buf.get(), rel.c_str(), rel.size() + 1);
         g_file_list_cache.push_back(Clay_String{
             .isStaticallyAllocated = false,
-            .length = (int)g_file_names.back().size(),
-            .chars = g_file_names.back().c_str()
+            .length = (int)rel.size(),
+            .chars = buf.get()
         });
+        g_file_name_buffers.push_back(std::move(buf));
+        i++;
     }
     else if(entry.type == NOB_FILE_REGULAR){
-        g_file_names.push_back(relative(g_cur_path,std::string(entry.path)));
+        std::string rel = relative(g_cur_path,std::string(entry.path));
+        g_file_names.push_back(rel);
+        auto buf = std::make_unique<char[]>(rel.size() + 1);
+        memcpy(buf.get(), rel.c_str(), rel.size() + 1);
         g_file_list_cache.push_back(Clay_String{
             .isStaticallyAllocated = false,
-            .length = (int)g_file_names.back().size(),
-            .chars = g_file_names.back().c_str()
+            .length = (int)rel.size(),
+            .chars = buf.get()
         });
+        g_file_name_buffers.push_back(std::move(buf));
+        i++;
     }
     return true; // Continue walking
 }
@@ -104,6 +119,8 @@ void HandleLoadButtonClicked(Clay_ElementId elementId,Clay_PointerData pointerDa
             g_cur_path = path;
             g_file_names.clear();
             g_file_list_cache.clear();
+            g_file_name_buffers.clear();
+            i = 0;
             // reset and walk
             walk_dir(g_cur_path.c_str(), walkDir, nullptr);
             for(const std::string& name : g_file_names) {
@@ -143,7 +160,6 @@ int main(void) {
             },
             .padding = {5, 5, 5, 5},
             .childGap = 0,
-            .childAlignment = {CLAY_ALIGN_X_LEFT, CLAY_ALIGN_Y_TOP},
             .layoutDirection = CLAY_TOP_TO_BOTTOM
         };
         CLAY_AUTO_ID({ .layout = sidebarLayout, .backgroundColor = {100,100,100,255} }) {
